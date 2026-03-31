@@ -16,66 +16,72 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service:
+        include:
           - name: frontend
             port: 3000
+            service: vogueverse-frontend1
           - name: cart-service
             port: 4001
+            service: vogueverse-cart-service-service-tdmk4392
           - name: search-service
             port: 4002
+            service: vogueverse-search-service-service-5rjqttjy
           - name: payment-service
             port: 4003
+            service: vogueverse-payment-service-service-fkhdqd3t
           - name: wishlist-service
             port: 4004
+            service: vogueverse-wishlist-service-service-rq17p0a2
           - name: recommendation-service
             port: 4005
+            service: vogueverse-recommendation-service-service-kkuw6bvi
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push Docker image
         run: |
-          IMAGE_URI=${{ env.ECR_REGISTRY }}/vogueverse/${{ matrix.service.name }}:${{ github.sha }}
-          docker build -t $IMAGE_URI ./${{ matrix.service.name }}
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/vogueverse/${{ matrix.name }}:${{ github.sha }}
+          docker build -t $IMAGE_URI ./${{ matrix.name }}
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       - name: Update ECS service
         run: |
-          TASK_FAMILY=vogueverse-${{ matrix.service.name }}
-          
+          TASK_FAMILY=vogueverse-${{ matrix.name }}
+
           CURRENT_TASK=$(aws ecs describe-task-definition \
             --task-definition $TASK_FAMILY \
             --query 'taskDefinition' \
             --output json)
-          
+
           NEW_TASK=$(echo $CURRENT_TASK | jq \
             --arg IMAGE "$IMAGE_URI" \
             '.containerDefinitions[0].image = $IMAGE |
              del(.taskDefinitionArn, .revision, .status,
                  .requiresAttributes, .compatibilities,
                  .registeredAt, .registeredBy)')
-          
+
           NEW_REVISION=$(aws ecs register-task-definition \
             --cli-input-json "$NEW_TASK" \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
-          
+
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --service vogueverse-${{ matrix.service.name }} \
+            --service ${{ matrix.service }} \
             --task-definition $NEW_REVISION \
             --force-new-deployment
-          
-          echo "✅ Deployed ${{ matrix.service.name }} to prod"
+
+          echo "✅ Deployed ${{ matrix.name }} to prod"
