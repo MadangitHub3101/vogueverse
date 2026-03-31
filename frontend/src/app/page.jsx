@@ -5,7 +5,7 @@ import ProductCard from '../components/ProductCard'
 import { cartAPI, wishlistAPI, recAPI } from '../lib/api'
 
 const PRODUCTS = [
-  { id: 1, name: 'Classic White Tee', category: 'Men', price: 799, image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400' },
+  { id: 1, name: 'Classic madan Tee', category: 'Men', price: 799, image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400' },
   { id: 2, name: 'Floral Sundress', category: 'Women', price: 1499, image: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=400' },
   { id: 3, name: 'Slim Fit Chinos', category: 'Men', price: 1299, image: 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=400' },
   { id: 4, name: 'Crop Hoodie', category: 'Women', price: 1099, image: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400' },
