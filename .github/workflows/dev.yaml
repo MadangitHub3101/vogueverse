@@ -1,0 +1,81 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  AWS_REGION: ap-south-2
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-2.amazonaws.com
+  ECS_CLUSTER: vogueverse-dev
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: frontend
+            port: 3000
+          - name: cart-service
+            port: 4001
+          - name: search-service
+            port: 4002
+          - name: payment-service
+            port: 4003
+          - name: wishlist-service
+            port: 4004
+          - name: recommendation-service
+            port: 4005
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/vogueverse/${{ matrix.service.name }}:${{ github.sha }}
+          docker build -t $IMAGE_URI ./${{ matrix.service.name }}
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Update ECS service
+        run: |
+          TASK_FAMILY=vogueverse-${{ matrix.service.name }}
+          
+          CURRENT_TASK=$(aws ecs describe-task-definition \
+            --task-definition $TASK_FAMILY \
+            --query 'taskDefinition' \
+            --output json)
+          
+          NEW_TASK=$(echo $CURRENT_TASK | jq \
+            --arg IMAGE "$IMAGE_URI" \
+            '.containerDefinitions[0].image = $IMAGE |
+             del(.taskDefinitionArn, .revision, .status,
+                 .requiresAttributes, .compatibilities,
+                 .registeredAt, .registeredBy)')
+          
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service vogueverse-${{ matrix.service.name }} \
+            --task-definition $NEW_REVISION \
+            --force-new-deployment
+          
+          echo "✅ Deployed ${{ matrix.service.name }} to dev"
