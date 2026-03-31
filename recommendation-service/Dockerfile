@@ -5,6 +5,3 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 4005
 CMD ["python", "main.py"]
-```
-
----
