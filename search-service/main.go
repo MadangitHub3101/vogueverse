@@ -1,13 +1,14 @@
 package main
 
 import (
-	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	"database/sql"
 )
 
 type Product struct {
@@ -20,12 +21,22 @@ type Product struct {
 var db *sql.DB
 
 func main() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL environment variable is not set")
+	}
+
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	db, err = sql.Open("postgres", dbURL)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to open DB: %v", err)
 	}
 	defer db.Close()
+
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Failed to connect to DB: %v", err)
+	}
+	log.Println("Connected to database successfully")
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
