@@ -1,49 +1,64 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
-import random
+import databases, os, random
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+database = databases.Database(DATABASE_URL)
 
 app = FastAPI(title="Recommendation Service")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-PRODUCTS = [
-    {"id": 1, "name": "Classic White Tee", "category": "Men", "price": 799},
-    {"id": 2, "name": "Floral Sundress", "category": "Women", "price": 1499},
-    {"id": 3, "name": "Slim Fit Chinos", "category": "Men", "price": 1299},
-    {"id": 4, "name": "Crop Hoodie", "category": "Women", "price": 1099},
-    {"id": 5, "name": "Denim Jacket", "category": "Unisex", "price": 2299},
-    {"id": 6, "name": "Ethnic Kurta", "category": "Men", "price": 999},
+SEED_PRODUCTS = [
+    (1,"Classic White Tee","Men",799),
+    (2,"Floral Sundress","Women",1499),
+    (3,"Slim Fit Chinos","Men",1299),
+    (4,"Crop Hoodie","Women",1099),
+    (5,"Denim Jacket","Unisex",2299),
+    (6,"Ethnic Kurta","Men",999),
 ]
+
+@app.on_event("startup")
+async def startup():
+    await database.connect()
+    await database.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id INT PRIMARY KEY,
+            name TEXT,
+            category TEXT,
+            price INT
+        )
+    """)
+    for p in SEED_PRODUCTS:
+        await database.execute("""
+            INSERT INTO products (id,name,category,price) VALUES (:id,:name,:cat,:price)
+            ON CONFLICT (id) DO NOTHING
+        """, {"id":p[0],"name":p[1],"cat":p[2],"price":p[3]})
+
+@app.on_event("shutdown")
+async def shutdown():
+    await database.disconnect()
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "recommendation-service"}
 
 @app.get("/api/rec/products")
-def get_recommendations(user_id: str = "guest", limit: int = 4):
-    # Simulate recommendation logic (shuffle for demo)
-    recs = random.sample(PRODUCTS, min(limit, len(PRODUCTS)))
-    return {
-        "userId": user_id,
-        "recommendations": recs,
-        "algorithm": "collaborative-filtering-v1"
-    }
+async def get_recommendations(user_id: str = "guest", limit: int = 4):
+    rows = await database.fetch_all("SELECT * FROM products")
+    recs = random.sample([dict(r) for r in rows], min(limit, len(rows)))
+    return {"userId": user_id, "recommendations": recs}
 
 @app.get("/api/rec/similar/{product_id}")
-def get_similar(product_id: int, limit: int = 3):
-    product = next((p for p in PRODUCTS if p["id"] == product_id), None)
+async def get_similar(product_id: int, limit: int = 3):
+    product = await database.fetch_one("SELECT * FROM products WHERE id=:id", {"id": product_id})
     if not product:
         return {"similar": []}
-    similar = [p for p in PRODUCTS if p["category"] == product["category"] and p["id"] != product_id]
-    return {"productId": product_id, "similar": similar[:limit]}
+    similar = await database.fetch_all(
+        "SELECT * FROM products WHERE category=:cat AND id!=:id LIMIT :lim",
+        {"cat": product["category"], "id": product_id, "lim": limit}
+    )
+    return {"productId": product_id, "similar": [dict(r) for r in similar]}
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 4005))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 4005)))
