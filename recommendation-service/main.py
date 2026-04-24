@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import databases, os, random
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-database = databases.Database(DATABASE_URL)
-
-app = FastAPI(title="Recommendation Service")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+database = databases.Database(DATABASE_URL, ssl="require")
 
 SEED_PRODUCTS = [
     (1,"Classic White Tee","Men",799),
@@ -17,8 +15,8 @@ SEED_PRODUCTS = [
     (6,"Ethnic Kurta","Men",999),
 ]
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await database.connect()
     await database.execute("""
         CREATE TABLE IF NOT EXISTS products (
@@ -33,10 +31,11 @@ async def startup():
             INSERT INTO products (id,name,category,price) VALUES (:id,:name,:cat,:price)
             ON CONFLICT (id) DO NOTHING
         """, {"id":p[0],"name":p[1],"cat":p[2],"price":p[3]})
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
     await database.disconnect()
+
+app = FastAPI(title="Recommendation Service", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/health")
 def health():
