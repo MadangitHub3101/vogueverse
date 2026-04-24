@@ -1,23 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 from typing import Optional
-import databases, os
+import databases
+import os
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-database = databases.Database(DATABASE_URL)
+database = databases.Database(DATABASE_URL, ssl="require")
 
-app = FastAPI(title="Wishlist Service")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-class WishlistItem(BaseModel):
-    productId: str
-    name: str
-    price: float
-    image: Optional[str] = None
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await database.connect()
     await database.execute("""
         CREATE TABLE IF NOT EXISTS wishlist_items (
@@ -30,10 +23,17 @@ async def startup():
             UNIQUE(user_id, product_id)
         )
     """)
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
     await database.disconnect()
+
+app = FastAPI(title="Wishlist Service", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+class WishlistItem(BaseModel):
+    productId: str
+    name: str
+    price: float
+    image: Optional[str] = None
 
 @app.get("/health")
 def health():
