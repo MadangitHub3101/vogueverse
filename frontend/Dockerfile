@@ -1,7 +1,8 @@
 FROM node:18-alpine AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+
+COPY package*.json ./
+RUN npm install --production
 
 FROM node:18-alpine AS builder
 WORKDIR /app
